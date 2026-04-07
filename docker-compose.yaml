@@ -13,7 +13,7 @@ services:
       - "5432:5432"
     volumes:
       - D:/postgres_data:/var/lib/postgresql/data  # Изменили том на bind mount
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./migration/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U moliksey -d diploma_db"]
       interval: 10s
