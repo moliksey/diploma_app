@@ -1,6 +1,7 @@
-from psycopg2.extras import RealDictCursor
-from typing import List, Dict, Any, Tuple
-from dto.like_dto import Like
+from typing import List
+from repository.base_repository import BaseRepository
+from dto.сreator_dto import Creator
+from dto.note_dto import Note
 
 class LikeRepository(BaseRepository):
     """Репозиторий для работы с лайками"""

@@ -1,6 +1,6 @@
-from psycopg2.extras import RealDictCursor
-from typing import List, Dict, Any, Tuple
-from dto.creator_dto import Creator
+from typing import List, Dict, Any, Optional
+from dto import Creator, Network
+from repository.base_repository import BaseRepository
 
 class CreatorRepository(BaseRepository):
     """Репозиторий для работы с создателями контента"""
@@ -9,7 +9,8 @@ class CreatorRepository(BaseRepository):
         """Создать актора"""
         query = """
             INSERT INTO creator (external_id, is_person, network_type) 
-            VALUES (%s, %s, %s) 
+            VALUES (%s, %s, %s) ON CONFLICT (external_id) 
+            DO UPDATE SET id = creator.id
             RETURNING id
         """
         with self._get_connection() as conn:
@@ -48,6 +49,19 @@ class CreatorRepository(BaseRepository):
             ORDER BY c.id LIMIT %s OFFSET %s
         """
         results = self.execute_query(query, (limit, skip))
+        return [Creator.from_dict(r) for r in results]
+    
+    def get_persons_by_network(self, network_type: int, skip: int = 0, limit: int = 100) -> List[Creator]:
+        """Получить пользователей по типу сети"""
+        query = """
+                SELECT c.id, c.external_id
+                FROM creator c
+                WHERE c.network_type = %s 
+                AND c.is_person =  true
+                ORDER BY c.id
+                LIMIT %s OFFSET %s
+                """
+        results = self.execute_query(query, (network_type, limit, skip))
         return [Creator.from_dict(r) for r in results]
     
     def get_by_network(self, network_type: int, skip: int = 0, limit: int = 100) -> List[Creator]:
@@ -107,6 +121,22 @@ class CreatorRepository(BaseRepository):
         result = self.execute_query(query, (network_type,))
         return result[0]['count'] if result else 0
     
+    def count_people_by_network(self, network_type: int) -> int:
+        """Количество акторов в сети"""
+        query = "SELECT COUNT(*) FROM creator WHERE network_type = %s and is_person =  true"
+        result = self.execute_query(query, (network_type,))
+        return result[0]['count'] if result else 0
+    
+    def get_users_to_process(self, network: Network, limit: int=1000, offset: int=0, isperson: bool=True) -> tuple[List[Creator], int]:
+        """Получает пользователей из базы для обработки"""
+        if isperson:
+            result=self.get_persons_by_network(network.id, offset, limit)
+        else:
+            result=self.get_by_network(network.id, offset, limit)
+        
+        new_offset=offset+limit
+        return result, new_offset
+
     def get_statistics(self) -> Dict[str, Any]:
         """Получить статистику по акторам"""
         query = """

@@ -24,3 +24,4 @@ class DatabaseConfig:
 
 # Глобальная конфигурация
 DB_CONFIG = DatabaseConfig()
+VK_TOKEN = os.getenv('VK_TOKEN', 'а где?')

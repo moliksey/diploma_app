@@ -1,3 +1,4 @@
+import psycopg2 
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict, Any, Tuple
 from contextlib import contextmanager

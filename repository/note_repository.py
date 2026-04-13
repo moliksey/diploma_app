@@ -1,6 +1,6 @@
-from psycopg2.extras import RealDictCursor
-from typing import List, Dict, Any, Tuple
-from dto.creator_dto import Note
+from typing import List, Optional
+from dto.note_dto import Note
+from repository.base_repository import BaseRepository
 
 class NoteRepository(BaseRepository):
     """Репозиторий для работы с постами"""

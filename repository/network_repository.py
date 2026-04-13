@@ -1,5 +1,4 @@
-from psycopg2.extras import RealDictCursor
-from typing import List, Dict, Any, Tuple, Optional  # Добавлен Optional
+from typing import List, Optional  # Добавлен Optional
 from contextlib import contextmanager
 from dto.network_dto import Network
 from base_repository import BaseRepository
@@ -12,7 +11,7 @@ class NetworkRepository(BaseRepository):
         query = """
             INSERT INTO network (network_name) 
             VALUES (%s) 
-            RETURNING id ON CONFLICT (network_name) DO NOTHING
+            RETURNING id
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -51,5 +50,11 @@ class NetworkRepository(BaseRepository):
         if existing:
             return existing
         return self.create(Network(id=None, network_name=network_name))
+    
+    def createOrIgnore(self, network_name: str):
+        """Создать сеть"""
+        existing = self.get_by_name(network_name)
+        if not existing:
+            self.create(Network(id=None, network_name=network_name))
         
 

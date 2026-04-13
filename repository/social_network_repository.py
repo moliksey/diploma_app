@@ -1,12 +1,10 @@
-from typing import List, Dict, Any, Tuple
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from dto.note_dto import Note
-from dto.creator_dto import Creator
-from repositories.network_repository import NetworkRepository
-from repositories.creator_repository import CreatorRepository
-from repositories.note_repository import NoteRepository
-from repositories.sub_repository import SubRepository
-from repositories.like_repository import LikeRepository
+from repository.network_repository import NetworkRepository
+from repository.creator_repository import CreatorRepository
+from repository.note_repository import NoteRepository
+from repository.sub_repository import SubRepository
+from repository.like_repository import LikeRepository
 
 class SocialNetworkRepository:
     """Фасадный репозиторий, объединяющий все репозитории"""

@@ -1,7 +1,6 @@
-from psycopg2.extras import RealDictCursor
-from typing import List, Dict, Any, Tuple
-from dto.creator_dto import Creator
-
+from typing import List
+from dto.сreator_dto import Creator
+from repository.base_repository import BaseRepository
 class SubRepository(BaseRepository):
     """Репозиторий для работы с подписками"""
     
