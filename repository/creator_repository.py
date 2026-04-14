@@ -47,6 +47,7 @@ class CreatorRepository(BaseRepository):
                         creator.id = results[i][0]
                 
                 return creators
+
     def get_by_id(self, creator_id: int) -> Optional[Creator]:
         """Получить актора по ID"""
         query = """

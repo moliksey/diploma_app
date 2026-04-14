@@ -22,3 +22,14 @@ class VKService(DefaultNetworkApiService):
                 print(f"Error with processing batch: {e}")
                 raise e
         return new_friends
+    
+    def get_groups(self, creator_ext_id: int) -> List[Creator]:
+        try:
+            groups_data = self.tools.get_all('groups.get', max_count=1000, 
+                                             values={'user_id': creator_ext_id, 'extended': 0})
+            new_groups=[Creator(None, ext_id, False, self.network.id) for ext_id in groups_data['items']]
+        except Exception as e:
+            if "This profile is private" not in str(e):
+                print(f"Error with processing batch: {e}")
+                raise e
+        return new_groups

@@ -1,4 +1,5 @@
 from typing import List
+from dto.sub_dto import Sub
 from dto.сreator_dto import Creator
 from repository.base_repository import BaseRepository
 class SubRepository(BaseRepository):
@@ -15,6 +16,35 @@ class SubRepository(BaseRepository):
             ON CONFLICT (contentmaker, subscriber) DO NOTHING
         """
         rows = self.execute_update(query, (contentmaker_id, subscriber_id))
+        return rows > 0
+    
+    def create_friend(self, sub: Sub) -> bool:
+        """Взаимная подписка (дружба)"""
+        if sub.contentmaker_id == sub.subscriber_id:
+            raise ValueError("Нельзя подписаться на самого себя")
+        
+        query = """
+            INSERT INTO sub (contentmaker, subscriber) 
+            VALUES (%s, %s)
+            ON CONFLICT (contentmaker, subscriber) DO NOTHING
+        """
+        rows = self.execute_update(query, (sub.contentmaker_id, sub.subscriber_id))
+        rows += self.execute_update(query, (sub.subscriber_id, sub.contentmaker_id))
+        return rows > 0
+
+    def create_many_friends(self, subs: List[Sub]) -> bool:
+        """Пакетная вставка подписок"""
+        if not subs:
+            return True 
+        
+        query = """
+            INSERT INTO sub (contentmaker, subscriber) 
+            VALUES (%s, %s)
+            ON CONFLICT (contentmaker, subscriber) DO NOTHING
+        """
+        data = [(sub.contentmaker_id, sub.subscriber_id) for sub in subs]
+        data.extend([(sub.subscriber_id, sub.contentmaker_id) for sub in subs])
+        rows = self.execute_batch_update(query, data)
         return rows > 0
     
     def unsubscribe(self, contentmaker_id: int, subscriber_id: int) -> bool:
