@@ -26,6 +26,30 @@ class PiplineCollector():
         # Инициализация пользователя
         self.analising_creator = self.creators_repo.create(Creator(None, user_external_id, True, self.working_network.id))
 
+    def add_creators_friends(self, creator, friends):
+        try:
+                # 1. Вставляем всех создателей (основного + друзей)
+                # Вставляем и получаем mapping: external_id -> creator_id
+                creator_mapping = {}
+
+                friends_saved=self.creators_repo.create_many_creators(friends)
+
+                
+                # 3. Пакетная вставка связей
+                if connections_data:
+                    cursor_self.executemany("""
+                        INSERT INTO sub (contentmaker, subscriber) 
+                        VALUES (%s, %s)
+                        ON CONFLICT (contentmaker, subscriber) DO NOTHING
+                    """, connections_data)
+                
+                conn.commit()
+                
+                return main_creator_id, [creator_mapping.get(fid) for fid in frends]
+        except Exception as e:
+                conn.rollback()
+                print(f"❌ Ошибка: {e}")
+                return None, []
     def get_groups_users(self, offset=0):
         lenth = self.creators_repo.count_people_by_network(self.working_network.id)
         new_offset = offset

@@ -19,7 +19,34 @@ class CreatorRepository(BaseRepository):
                 conn.commit()
                 creator.id = cur.fetchone()[0]
                 return creator
-    
+            
+    def create_many_creators(self, creators: List[Creator]) -> List[Creator]:
+        """Массовое создание акторов (оптимизировано)"""
+        query = """
+            INSERT INTO creator (external_id, is_person, network_type) 
+            VALUES (%s, %s, %s) 
+            ON CONFLICT (external_id) 
+            DO UPDATE SET id = creator.id
+            RETURNING id
+        """
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                # Подготавливаем данные
+                values = [(c.external_id, c.is_person, c.network_type) for c in creators]
+                
+                # Массовая вставка
+                cur.executemany(query, values)
+                conn.commit()
+                
+                # Получаем все возвращенные ID
+                results = cur.fetchall()
+                
+                # Обновляем ID в объектах
+                for i, creator in enumerate(creators):
+                    if i < len(results):
+                        creator.id = results[i][0]
+                
+                return creators
     def get_by_id(self, creator_id: int) -> Optional[Creator]:
         """Получить актора по ID"""
         query = """
