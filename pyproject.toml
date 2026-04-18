@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# Какие наборы правил включить:
+select = ["E", "W", "F", "I", "UP"]
+ignore = ["E501", "F821", "F405", "F403"] 
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

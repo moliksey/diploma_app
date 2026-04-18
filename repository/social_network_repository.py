@@ -1,52 +1,54 @@
-from typing import Dict, Any, List
+from typing import Any
+
 from dto.note_dto import Note
-from repository.network_repository import NetworkRepository
 from repository.creator_repository import CreatorRepository
+from repository.like_repository import LikeRepository
+from repository.network_repository import NetworkRepository
 from repository.note_repository import NoteRepository
 from repository.sub_repository import SubRepository
-from repository.like_repository import LikeRepository
+
 
 class SocialNetworkRepository:
     """Фасадный репозиторий, объединяющий все репозитории"""
-    
-    def __init__(self, db_params: Dict[str, Any]):
+
+    def __init__(self, db_params: dict[str, Any]):
         self.db_params = db_params
         self.networks = NetworkRepository(db_params)
         self.creators = CreatorRepository(db_params)
         self.notes = NoteRepository(db_params)
         self.subs = SubRepository(db_params)
         self.likes = LikeRepository(db_params)
-    
-    def get_full_post_info(self, post_id: int) -> Dict[str, Any]:
+
+    def get_full_post_info(self, post_id: int) -> dict[str, Any]:
         """Получить полную информацию о посте с лайками и подписками"""
         post = self.notes.get_by_id(post_id)
         if not post:
             return {}
-        
+
         return {
-            'post': post,
-            'likes_count': self.likes.get_likes_count(post_id),
-            'replies_count': len(self.notes.get_replies(post_id)),
-            'is_liked_by_user': None,  # Нужно передать user_id
-            'creator': self.creators.get_by_id(post.creator) if post.creator else None
+            "post": post,
+            "likes_count": self.likes.get_likes_count(post_id),
+            "replies_count": len(self.notes.get_replies(post_id)),
+            "is_liked_by_user": None,  # Нужно передать user_id
+            "creator": self.creators.get_by_id(post.creator) if post.creator else None,
         }
-    
-    def get_creator_profile(self, creator_id: int) -> Dict[str, Any]:
+
+    def get_creator_profile(self, creator_id: int) -> dict[str, Any]:
         """Получить полный профиль создателя"""
         creator = self.creators.get_by_id(creator_id)
         if not creator:
             return {}
-        
+
         return {
-            'creator': creator,
-            'posts_count': self.notes.get_creator_posts_count(creator_id),
-            'subscribers_count': self.subs.get_subscribers_count(creator_id),
-            'subscriptions_count': self.subs.get_subscriptions_count(creator_id),
-            'recent_posts': self.notes.get_by_creator(creator_id, limit=10),
-            'top_subscribers': self.subs.get_subscribers(creator_id, limit=5)
+            "creator": creator,
+            "posts_count": self.notes.get_creator_posts_count(creator_id),
+            "subscribers_count": self.subs.get_subscribers_count(creator_id),
+            "subscriptions_count": self.subs.get_subscriptions_count(creator_id),
+            "recent_posts": self.notes.get_by_creator(creator_id, limit=10),
+            "top_subscribers": self.subs.get_subscribers(creator_id, limit=5),
         }
-    
-    def get_user_feed(self, user_id: int, skip: int = 0, limit: int = 50) -> List[Note]:
+
+    def get_user_feed(self, user_id: int, skip: int = 0, limit: int = 50) -> list[Note]:
         """Получить ленту постов от подписок пользователя"""
         query = """
             SELECT DISTINCT n.*, c.external_id as creator_external_id

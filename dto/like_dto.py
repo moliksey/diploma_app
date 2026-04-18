@@ -1,15 +1,17 @@
-from dataclasses import dataclass, asdict
-from typing import Dict, Any
+from dataclasses import asdict, dataclass
+from typing import Any
+
 
 @dataclass
 class Like:
     """Модель лайка"""
+
     post: int
     person: int
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Like':
+    def from_dict(cls, data: dict[str, Any]) -> Like:
         return cls(**data)

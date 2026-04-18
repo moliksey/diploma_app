@@ -1,19 +1,21 @@
-from dataclasses import dataclass, asdict
-from typing import Dict, Any, Optional
+from dataclasses import asdict, dataclass
+from typing import Any
+
 
 @dataclass
 class Note:
     """Модель поста/заметки"""
-    id: Optional[int]
-    msg: Optional[str]
-    img: Optional[str]
-    parent: Optional[int]
-    creator: Optional[int]
+
+    id: int | None
+    msg: str | None
+    img: str | None
+    parent: int | None
+    creator: int | None
     external_id: int
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v is not None}
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Note':
+    def from_dict(cls, data: dict[str, Any]) -> Note:
         return cls(**data)

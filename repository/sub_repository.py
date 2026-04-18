@@ -1,30 +1,43 @@
-from typing import List
 from dto.sub_dto import Sub
 from dto.сreator_dto import Creator
 from repository.base_repository import BaseRepository
+
+
 class SubRepository(BaseRepository):
     """Репозиторий для работы с подписками"""
-    
+
     def subscribe(self, contentmaker_id: int, subscriber_id: int) -> bool:
         """Подписаться на создателя"""
         if contentmaker_id == subscriber_id:
             raise ValueError("Нельзя подписаться на самого себя")
-        
+
         query = """
-            INSERT INTO sub (contentmaker, subscriber) 
+            INSERT INTO sub (contentmaker, subscriber)
             VALUES (%s, %s)
             ON CONFLICT (contentmaker, subscriber) DO NOTHING
         """
         rows = self.execute_update(query, (contentmaker_id, subscriber_id))
         return rows > 0
-    
+
+    def subscribe_for_many(self, actor: Creator, subscriptions: list[Creator]) -> bool:
+        if not actor or not subscriptions or len(subscriptions) < 1:
+            return False
+        query = """
+            INSERT INTO sub (contentmaker, subscriber)
+            VALUES (%s, %s)
+            ON CONFLICT (contentmaker, subscriber) DO NOTHING
+        """
+        data = [(sub.id, actor.id) for sub in subscriptions]
+        rows = self.execute_batch_update(query, data)
+        return rows > 0
+
     def create_friend(self, sub: Sub) -> bool:
         """Взаимная подписка (дружба)"""
         if sub.contentmaker_id == sub.subscriber_id:
             raise ValueError("Нельзя подписаться на самого себя")
-        
+
         query = """
-            INSERT INTO sub (contentmaker, subscriber) 
+            INSERT INTO sub (contentmaker, subscriber)
             VALUES (%s, %s)
             ON CONFLICT (contentmaker, subscriber) DO NOTHING
         """
@@ -32,13 +45,13 @@ class SubRepository(BaseRepository):
         rows += self.execute_update(query, (sub.subscriber_id, sub.contentmaker_id))
         return rows > 0
 
-    def create_many_friends(self, subs: List[Sub]) -> bool:
+    def create_many_friends(self, subs: list[Sub]) -> bool:
         """Пакетная вставка подписок"""
         if not subs:
-            return True 
-        
+            return False
+
         query = """
-            INSERT INTO sub (contentmaker, subscriber) 
+            INSERT INTO sub (contentmaker, subscriber)
             VALUES (%s, %s)
             ON CONFLICT (contentmaker, subscriber) DO NOTHING
         """
@@ -46,23 +59,25 @@ class SubRepository(BaseRepository):
         data.extend([(sub.subscriber_id, sub.contentmaker_id) for sub in subs])
         rows = self.execute_batch_update(query, data)
         return rows > 0
-    
+
     def unsubscribe(self, contentmaker_id: int, subscriber_id: int) -> bool:
         """Отписаться от создателя"""
         query = "DELETE FROM sub WHERE contentmaker = %s AND subscriber = %s"
         rows = self.execute_update(query, (contentmaker_id, subscriber_id))
         return rows > 0
-    
+
     def is_subscribed(self, contentmaker_id: int, subscriber_id: int) -> bool:
         """Проверить подписку"""
         query = """
-            SELECT 1 FROM sub 
+            SELECT 1 FROM sub
             WHERE contentmaker = %s AND subscriber = %s
         """
         result = self.execute_query(query, (contentmaker_id, subscriber_id))
         return len(result) > 0
-    
-    def get_subscribers(self, contentmaker_id: int, skip: int = 0, limit: int = 100) -> List[Creator]:
+
+    def get_subscribers(
+        self, contentmaker_id: int, skip: int = 0, limit: int = 100
+    ) -> list[Creator]:
         """Получить подписчиков создателя"""
         query = """
             SELECT c.*, n.network_name
@@ -75,8 +90,10 @@ class SubRepository(BaseRepository):
         """
         results = self.execute_query(query, (contentmaker_id, limit, skip))
         return [Creator.from_dict(r) for r in results]
-    
-    def get_subscriptions(self, subscriber_id: int, skip: int = 0, limit: int = 100) -> List[Creator]:
+
+    def get_subscriptions(
+        self, subscriber_id: int, skip: int = 0, limit: int = 100
+    ) -> list[Creator]:
         """Получить на кого подписан пользователь"""
         query = """
             SELECT c.*, n.network_name
@@ -89,15 +106,15 @@ class SubRepository(BaseRepository):
         """
         results = self.execute_query(query, (subscriber_id, limit, skip))
         return [Creator.from_dict(r) for r in results]
-    
+
     def get_subscribers_count(self, contentmaker_id: int) -> int:
         """Количество подписчиков"""
         query = "SELECT COUNT(*) FROM sub WHERE contentmaker = %s"
         result = self.execute_query(query, (contentmaker_id,))
-        return result[0]['count'] if result else 0
-    
+        return result[0]["count"] if result else 0
+
     def get_subscriptions_count(self, subscriber_id: int) -> int:
         """Количество подписок"""
         query = "SELECT COUNT(*) FROM sub WHERE subscriber = %s"
         result = self.execute_query(query, (subscriber_id,))
-        return result[0]['count'] if result else 0
+        return result[0]["count"] if result else 0
