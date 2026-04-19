@@ -4,7 +4,7 @@ import tqdm
 
 from config import DB_CONFIG
 from dto import *
-from network_api_service import network_api_service_factory
+from network_api_service import getNetworkApiService
 from repository import *
 
 
@@ -16,18 +16,21 @@ class PiplineCollector:
         db_params = DB_CONFIG.to_dict()
 
         # Инъекция всех репозиториев
-        self.networks_repo = NetworkRepository(db_params)
-        self.creators_repo = CreatorRepository(db_params)
-        self.notes_repo = NoteRepository(db_params)
-        self.subs_repo = SubRepository(db_params)
-        self.likes_repo = LikeRepository(db_params)
-        self.working_network = self.networks_repo.get_or_create(network.name)
-        self.network_api_service = network_api_service_factory.getNetworkApiService(
-            network, creds, self.creators_repo
+        self._networks_repo = NetworkRepository(db_params)
+        self._creators_repo = CreatorRepository(db_params)
+        self._notes_repo = NoteRepository(db_params)
+        self._subs_repo = SubRepository(db_params)
+        self._likes_repo = LikeRepository(db_params)
+        self._working_network = self._networks_repo.get_or_create(network.name)
+        self._network_api_service = getNetworkApiService(
+            network=network,
+            creds=creds,
+            creator_repo=self._creators_repo,
+            network_repo=self._networks_repo,
         )
         # Инициализация пользователя
-        self.analising_creator = self.creators_repo.create(
-            Creator(None, user_external_id, True, self.working_network.id)
+        self._analising_creator = self._creators_repo.create(
+            Creator(None, user_external_id, True, self._working_network.id)
         )
 
     def run_pipeline(
@@ -41,13 +44,13 @@ class PiplineCollector:
         self._parse_reacts(reacts_offset)
 
     def _parse_users(self, first_offset=0):
-        total_users = self.creators_repo.count_people_by_network(self.working_network.id)
+        total_users = self._creators_repo.count_people_by_network(self._working_network.id)
         offset = first_offset
         with tqdm.tqdm(
             total=total_users, initial=0, desc="Processing groups", unit="users"
         ) as pbar:
             while offset < total_users:
-                peoples, offset = self.creators_repo.get_users_to_process(
+                peoples, offset = self._creators_repo.get_users_to_process(
                     offset=offset, isperson=True
                 )
                 if not peoples:
@@ -62,7 +65,7 @@ class PiplineCollector:
     def _process_user_batch(self, peoples: list[Creator], pbar) -> int:
         for creator in peoples:
             try:
-                friends_out = self.network_api_service.get_friends(creator)
+                friends_out = self._network_api_service.get_friends(creator)
                 self._add_creators_friends(creator, friends_out)
             except Exception as e:
                 if "Rate limit exceeded" in str(e) or "flood control" in str(e):
@@ -73,9 +76,9 @@ class PiplineCollector:
     def _add_creators_friends(self, creator, friends):
         """Добавление друзей создателя в базу и создание подписок"""
         try:
-            friends_saved = self.creators_repo.create_many_creators(friends)
+            friends_saved = self._creators_repo.create_many_creators(friends)
             if friends_saved:
-                self.subs_repo.create_many_friends(
+                self._subs_repo.create_many_friends(
                     [Sub(creator.id, friend_saved.id) for friend_saved in friends_saved]
                 )
             return friends_saved
@@ -84,14 +87,14 @@ class PiplineCollector:
             return None, []
 
     def _parse_subscriptions(self, first_offset: int = 0):
-        total_users = self.creators_repo.count_people_by_network(self.working_network.id)
+        total_users = self._creators_repo.count_people_by_network(self._working_network.id)
         offset = first_offset
         with tqdm.tqdm(
             total=total_users, initial=0, desc="Processing groups", unit="users"
         ) as main_pbar:
             while offset < total_users:
                 try:
-                    peoples, offset = self.creators_repo.get_users_to_process(
+                    peoples, offset = self._creators_repo.get_users_to_process(
                         offset=offset, isperson=True
                     )
                     if not peoples:
@@ -105,10 +108,10 @@ class PiplineCollector:
     def _process_group_batch(self, peoples: list[Creator], pbar) -> int:
         for creator in peoples:
             try:
-                groups = self.network_api_service.get_groups(creator)
+                groups = self._network_api_service.get_groups(creator)
                 if groups:
-                    self.creators_repo.create_many_creators(groups)
-                    self.subs_repo.subscribe_for_many(creator, groups)
+                    self._creators_repo.create_many_creators(groups)
+                    self._subs_repo.subscribe_for_many(creator, groups)
             except Exception as e:
                 print(f"\nКритическая ошибка при обработке пользователя {creator.external_id}: {e}")
                 if "flood control" in str(e):
@@ -118,20 +121,20 @@ class PiplineCollector:
                 pbar.update(1)
 
     def _parse_posts(self, offset_start: int = 0):
-        total_users = self.creators_repo.count_people_by_network(self.working_network.id)
+        total_users = self._creators_repo.count_people_by_network(self._working_network.id)
         two_weeks_ago = int(time.time()) - (14 * 24 * 60 * 60)
         offset = offset_start
         with tqdm.tqdm(
             total=total_users, initial=0, desc="Processing groups", unit="users"
         ) as pbar:
             while offset < total_users:
-                peoples, offset = self.creators_repo.get_users_to_process(
+                peoples, offset = self._creators_repo.get_users_to_process(
                     offset=offset, isperson=False
                 )
                 for creator in peoples:
                     try:
-                        posts = self.network_api_service.get_post(creator, two_weeks_ago)
-                        self.notes_repo.create_many_posts(posts)
+                        posts = self._network_api_service.get_post(creator, two_weeks_ago)
+                        self._notes_repo.create_many_posts(posts)
                     except Exception as e:
                         print(
                             f"\nКритическая ошибка при обработке пользователя {creator.external_id}: {e}"
@@ -145,7 +148,7 @@ class PiplineCollector:
 
     def _parse_comments(self, offset_start: int = 0):
         """Сбор комментариев к постам"""
-        total_posts = self.notes_repo.count_posts_by_network(self.working_network.id)
+        total_posts = self._notes_repo.count_posts_by_network(self._working_network.id)
         offset = offset_start
 
         with tqdm(
@@ -154,8 +157,8 @@ class PiplineCollector:
             while offset < total_posts:
                 try:
                     # Получаем пакет постов
-                    posts, offset = self.notes_repo.get_posts_to_process(
-                        offset=offset, limit=100, network_id=self.working_network.id
+                    posts, offset = self._notes_repo.get_posts_to_process(
+                        offset=offset, limit=100, network_id=self._working_network.id
                     )
 
                     if not posts:
@@ -180,24 +183,24 @@ class PiplineCollector:
         for post in posts:
             try:
                 # Получаем комментарии к посту
-                comments = self.network_api_service.get_comments(post.external_id)
+                comments = self._network_api_service.get_comments(post.external_id)
 
                 if comments:
                     # Сохраняем комментарии
-                    saved_comments = self.notes_repo.create_many_posts(comments)
+                    saved_comments = self._notes_repo.create_many_posts(comments)
 
                     if saved_comments:
                         self.stats["comments_processed"] += len(saved_comments)
 
                         # Создаем подписки между авторами комментариев и автором поста
                         comment_creators = [
-                            Creator(None, comment.creator, True, self.working_network.id)
+                            Creator(None, comment.creator, True, self._working_network.id)
                             for comment in saved_comments
                             if comment.creator
                         ]
 
                         if comment_creators:
-                            self.creators_repo.create_many_creators(comment_creators)
+                            self._creators_repo.create_many_creators(comment_creators)
 
                 time.sleep(0.3)  # Небольшая задержка между запросами
 
@@ -210,15 +213,15 @@ class PiplineCollector:
         """
         Сбор реакций (лайков) к постам
         """
-        total_posts = self.notes_repo.count_posts_by_network(self.working_network.id)
+        total_posts = self._notes_repo.count_posts_by_network(self._working_network.id)
         offset = offset_start
 
         with tqdm(total=total_posts, initial=offset, desc="Сбор лайков", unit="постов") as pbar:
             while offset < total_posts:
                 try:
                     # Получаем пакет постов
-                    posts, offset = self.notes_repo.get_posts_to_process(
-                        offset=offset, limit=100, network_id=self.working_network.id
+                    posts, offset = self._notes_repo.get_posts_to_process(
+                        offset=offset, limit=100, network_id=self._working_network.id
                     )
 
                     if not posts:
@@ -243,11 +246,11 @@ class PiplineCollector:
         for post in posts:
             try:
                 # Получаем пользователей, которые лайкнули пост
-                liked_users = self.network_api_service.get_likes(post.external_id)
+                liked_users = self._network_api_service.get_likes(post.external_id)
 
                 if liked_users:
                     # Сохраняем пользователей, если их нет в БД
-                    saved_users = self.creators_repo.create_many_creators(liked_users)
+                    saved_users = self._creators_repo.create_many_creators(liked_users)
 
                     if saved_users:
                         self.stats["likes_processed"] += len(saved_users)
@@ -258,7 +261,7 @@ class PiplineCollector:
                             likes.append(Like(post.id, user.id))
 
                         if likes:
-                            self.likes_repo.create_many_likes(likes)
+                            self._likes_repo.create_many_likes(likes)
 
                 time.sleep(0.3)  # Небольшая задержка между запросами
 

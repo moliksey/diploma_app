@@ -1,8 +1,10 @@
-import repository
-from config import DB_CONFIG
+from collecting_pipeline import PiplineCollector
+from config import VK_TOKEN
 from dto import NetworkType
 
 
 def main():
-    network_repo = repository.NetworkRepository(DB_CONFIG.to_dict())
-    network_repo.createOrIgnore(NetworkType.VK.value)
+    pipeline = PiplineCollector(
+        user_external_id=365075119, network=NetworkType.VK, creds={"token": VK_TOKEN}
+    )
+    pipeline.run_pipeline()

@@ -1,14 +1,16 @@
 from dto import NetworkType
-from network_api_service.default_network_api_service import DefaultNetworkApiService
-from network_api_service.vk_service.vk_api_service import VKService
-from repository.creator_repository import CreatorRepository
+from network_api_service import DefaultNetworkApiService, VKService
+from repository import CreatorRepository, NetworkRepository
 
 
 def getNetworkApiService(
-    network: NetworkType, creds: dict, creator_repo: CreatorRepository
+    network: NetworkType,
+    creds: dict,
+    creator_repo: CreatorRepository,
+    network_repo: NetworkRepository,
 ) -> DefaultNetworkApiService:
     if network == NetworkType.VK:
-        return VKService(creds.get("token"), creator_repo)
+        return VKService(creds.get("token"), creator_repo, network_repo)
     elif network == NetworkType.TWITTER:
         raise Exception("Пока не реализовано.")
     elif network == NetworkType.TELEGRAM:
