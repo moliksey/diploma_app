@@ -12,7 +12,7 @@ class CreatorRepository(BaseRepository):
         query = """
             INSERT INTO creator (external_id, is_person, network_type)
             VALUES (%s, %s, %s) ON CONFLICT (external_id)
-            DO UPDATE SET id = creator.id
+            DO NOTHING
             RETURNING id
         """
         with self._get_connection() as conn:
@@ -28,7 +28,7 @@ class CreatorRepository(BaseRepository):
             INSERT INTO creator (external_id, is_person, network_type)
             VALUES (%s, %s, %s)
             ON CONFLICT (external_id)
-            DO UPDATE SET id = creator.id
+            DO NOTHING
             RETURNING id
         """
         with self._get_connection() as conn:

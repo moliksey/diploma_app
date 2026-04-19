@@ -22,21 +22,25 @@ class PiplineCollector:
         self.subs_repo = SubRepository(db_params)
         self.likes_repo = LikeRepository(db_params)
         self.working_network = self.networks_repo.get_or_create(network.name)
-        self.network_api_service = network_api_service_factory.getNetworkApiService(network, creds)
+        self.network_api_service = network_api_service_factory.getNetworkApiService(
+            network, creds, self.creators_repo
+        )
         # Инициализация пользователя
         self.analising_creator = self.creators_repo.create(
             Creator(None, user_external_id, True, self.working_network.id)
         )
 
-    def run_pipeline(self, offset=0, groups_offset=0, post_offset=0):
+    def run_pipeline(
+        self, offset=0, groups_offset=0, post_offset=0, comments_offset=0, reacts_offset=0
+    ):
         """Запуск пайплайна сбора данных"""
-        self.parse_users(offset)
-        self.parse_subscriptions(groups_offset)
-        self.parse_posts(post_offset)
-        self.parse_comments()
-        self.parse_reacts()
+        self._parse_users(offset)
+        self._parse_subscriptions(groups_offset)
+        self._parse_posts(post_offset)
+        self._parse_comments(comments_offset)
+        self._parse_reacts(reacts_offset)
 
-    def parse_users(self, first_offset=0):
+    def _parse_users(self, first_offset=0):
         total_users = self.creators_repo.count_people_by_network(self.working_network.id)
         offset = first_offset
         with tqdm.tqdm(
@@ -79,7 +83,7 @@ class PiplineCollector:
             print(f"❌ Ошибка: {e}")
             return None, []
 
-    def parse_subscriptions(self, first_offset: int = 0):
+    def _parse_subscriptions(self, first_offset: int = 0):
         total_users = self.creators_repo.count_people_by_network(self.working_network.id)
         offset = first_offset
         with tqdm.tqdm(
@@ -113,7 +117,7 @@ class PiplineCollector:
             finally:
                 pbar.update(1)
 
-    def parse_posts(self, offset_start: int = 0):
+    def _parse_posts(self, offset_start: int = 0):
         total_users = self.creators_repo.count_people_by_network(self.working_network.id)
         two_weeks_ago = int(time.time()) - (14 * 24 * 60 * 60)
         offset = offset_start
@@ -139,7 +143,7 @@ class PiplineCollector:
                     finally:
                         pbar.update(1)
 
-    def parse_comments(self, offset_start: int = 0):
+    def _parse_comments(self, offset_start: int = 0):
         """Сбор комментариев к постам"""
         total_posts = self.notes_repo.count_posts_by_network(self.working_network.id)
         offset = offset_start
@@ -202,7 +206,7 @@ class PiplineCollector:
             finally:
                 pbar.update(1)
 
-    def parse_reacts(self, offset_start: int = 0):
+    def _parse_reacts(self, offset_start: int = 0):
         """
         Сбор реакций (лайков) к постам
         """

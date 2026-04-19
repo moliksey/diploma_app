@@ -4,15 +4,19 @@ import vk_api
 
 from dto import Creator, NetworkType, Note
 from network_api_service.default_network_api_service import DefaultNetworkApiService
+from repository import CreatorRepository, NetworkRepository
 
 
 class VKService(DefaultNetworkApiService):
-    def __init__(self, token: str) -> vk_api.VkTools:
-        self.network = self.networks_repo.get_or_create(NetworkType.VK.value)
+    def __init__(
+        self, token: str, creators_repo: CreatorRepository, networks_repo: NetworkRepository
+    ):
+        self.network = networks_repo.get_or_create(NetworkType.VK.value)
         self.vkApiSession = vk_api.VkApi(token)
         self.vkU = self.vkApiSession.get_api()
         self.tools = vk_api.VkTools(self.vkU)
         self.max_count = 5000
+        self.creators_repo = creators_repo
 
     def get_friends(self, creator: Creator) -> list[Creator]:
         try:
@@ -79,14 +83,15 @@ class VKService(DefaultNetworkApiService):
             comments = []
             for comment in comments_data.get("items", []):
                 # Создаем Note для комментария
+                creator = self.creators_repo.create(
+                    Creator(None, comment.get("from_id"), True, self.network.id)
+                )
                 comment_note = Note(
                     id=None,
                     msg=comment.get("text", ""),
                     img=f"vk/comment_{comment['id']}/",
                     parent=post.id,  # parent указывает на ID поста
-                    creator=comment.get(
-                        "from_id"
-                    ),  # FIXME подвязать к пользователю через id наверное с помощью get_or_create
+                    creator=creator.id,
                     external_id=comment["id"],
                 )
                 comments.append(comment_note)
@@ -122,14 +127,15 @@ class VKService(DefaultNetworkApiService):
 
             replies = []
             for reply in replies_data.get("items", []):
+                creator = self.creators_repo.create(
+                    Creator(None, comment.get("from_id"), True, self.network.id)
+                )
                 reply_note = Note(
                     id=None,
                     msg=reply.get("text", ""),
                     img=f"vk/comment_{reply['id']}/",
                     parent=comment.id,  # parent указывает на ID комментария
-                    creator=reply.get(
-                        "from_id"
-                    ),  # FIXME подвязать к пользователю через id наверное с помощью get_or_create
+                    creator=creator.id,
                     external_id=reply["id"],
                 )
                 replies.append(reply_note)
@@ -146,13 +152,14 @@ class VKService(DefaultNetworkApiService):
         Документация VK: likes.getList
         """
         try:
+            creator = self.creators_repo.get_by_id(post.creator)
             # Получаем список лайкнувших пост
             likes_data = self.tools.get_all(
                 "likes.getList",
                 max_count=1000,
                 values={
                     "type": "post",
-                    "owner_id": post.creator,  # FIXME изменить на external если решу на 71 и 112
+                    "owner_id": creator.external_id,
                     "item_id": post.external_id,
                     "filter": "likes",  # Только лайки (не копии)
                     "extended": 1,  # Получаем расширенную информацию о пользователях
