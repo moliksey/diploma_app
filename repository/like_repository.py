@@ -1,7 +1,5 @@
-from dto.like_dto import Like
-from dto.note_dto import Note
-from dto.сreator_dto import Creator
-from repository.base_repository import BaseRepository
+from dto import Creator, Like, Network, Note
+from repository import BaseRepository
 
 
 class LikeRepository(BaseRepository):
@@ -81,3 +79,26 @@ class LikeRepository(BaseRepository):
         query = 'SELECT COUNT(*) FROM "like" WHERE person = %s'
         result = self.execute_query(query, (person_id,))
         return result[0]["count"] if result else 0
+
+    def get_likes_count_over_network(self, network: Network):
+        query = 'SELECT COUNT(*) FROM "like" l join creator c on l.person=creator.id WHERE creator.network_type = %s'
+        result = self.execute_query(query, (network.id,))
+        return result[0]["count"] if result else 0
+
+    def get_like_edges_to_process(
+        self, network_type: int, skip: int = 0, limit: int = 100
+    ) -> tuple[list[tuple[int, int]], int]:
+        query = """
+            SELECT c.id, cr.id FROM "like" l
+            JOIN creator c ON l.person = c.id
+            JOIN note n ON l.post = n.id
+            JOIN creator cr ON n.creator = cr.id
+            WHERE cr.network_type = %s
+            ORDER BY cr.id
+            LIMIT %s OFFSET %s
+        """
+        results = self.execute_query(query, (network_type, limit, skip))
+        edges = [(row["c.id"], row["cr.id"]) for row in results] if results else []
+
+        new_offset = skip + limit
+        return edges, new_offset

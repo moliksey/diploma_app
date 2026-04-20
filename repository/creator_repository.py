@@ -86,11 +86,10 @@ class CreatorRepository(BaseRepository):
     ) -> list[Creator]:
         """Получить пользователей по типу сети"""
         query = """
-                SELECT c.id, c.external_id
-                FROM creator c
-                WHERE c.network_type = %s
-                AND c.is_person =  true
-                ORDER BY c.id
+                SELECT * FROM creator
+                WHERE network_type = %s
+                AND is_person =  true
+                ORDER BY id
                 LIMIT %s OFFSET %s
                 """
         results = self.execute_query(query, (network_type, limit, skip))

@@ -1,6 +1,5 @@
-from dto.sub_dto import Sub
-from dto.сreator_dto import Creator
-from repository.base_repository import BaseRepository
+from dto import Creator, Network, Sub
+from repository import BaseRepository
 
 
 class SubRepository(BaseRepository):
@@ -118,3 +117,31 @@ class SubRepository(BaseRepository):
         query = "SELECT COUNT(*) FROM sub WHERE subscriber = %s"
         result = self.execute_query(query, (subscriber_id,))
         return result[0]["count"] if result else 0
+
+    def get_subs_count_over_network(self, network: Network):
+        query = """SELECT COUNT(*) FROM sub
+                join creator on sub.contentmaker=creator.id
+                or sub.subscriber=creator.id
+                WHERE creator.network_type = %s"""
+        result = self.execute_query(query, (network.id,))
+        return result[0]["count"] / 2 if result else 0
+
+    def get_subs_by_network(self, network_type: int, skip: int = 0, limit: int = 100) -> list[Sub]:
+        """Получить пользователей по типу сети"""
+        query = """
+                SELECT sub.contentmaker, sub.subscriber FROM sub
+                join creator on sub.contentmaker=creator.id
+                WHERE creator.network_type = %s
+                ORDER BY creator.id
+                LIMIT %s OFFSET %s
+                """
+        results = self.execute_query(query, (network_type, limit, skip))
+        return [Sub.from_dict(r) for r in results]
+
+    def get_subs_to_process(
+        self, network: Network, limit: int = 1000, offset: int = 0
+    ) -> tuple[list[Sub], int]:
+        """Получает пользователей из базы для обработки"""
+        result = self.get_subs_by_network(network.id, offset, limit)
+        new_offset = offset + limit
+        return result, new_offset

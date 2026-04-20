@@ -101,6 +101,16 @@ class NoteRepository(BaseRepository):
         results = self.execute_query(query, (parent_id, limit, skip))
         return [Note.from_dict(r) for r in results]
 
+    def get_user_comments_count(self, user_id: int) -> int:
+        """Получить ответы на пост"""
+        query = """
+            SELECT count(*) FROM note
+            WHERE parent IS NOT NULL
+            and creator = %s
+        """
+        result = self.execute_query(query, (user_id,))
+        return result[0]["count"] if result else 0
+
     def get_thread(self, note_id: int) -> list[Note]:
         """Получить всю ветку обсуждения"""
         query = """
@@ -147,3 +157,26 @@ class NoteRepository(BaseRepository):
         query = "DELETE FROM note WHERE id = %s"
         rows = self.execute_update(query, (note_id,))
         return rows > 0
+
+    def get_comments_count_over_network(self, network: Network):
+        query = "SELECT COUNT(*) FROM note n join creator c on n.creator=c.id WHERE parent IS NOT NULL and c.network_type = %s"
+        result = self.execute_query(query, (network.id,))
+        return result[0]["count"] if result else 0
+
+    def get_comment_edges_to_process(
+        self, network_type: int, skip: int = 0, limit: int = 100
+    ) -> tuple[list[tuple[int, int]], int]:
+        query = """
+            SELECT c.id, cr.id FROM note n
+            join creator c on n.creator=c.id
+            JOIN note no ON n.parent = no.id
+            JOIN creator cr ON no.creator = cr.id
+            WHERE cr.network_type = %s
+            ORDER BY cr.id
+            LIMIT %s OFFSET %s
+        """
+        results = self.execute_query(query, (network_type, limit, skip))
+        edges = [(row["c.id"], row["cr.id"]) for row in results] if results else []
+
+        new_offset = skip + limit
+        return edges, new_offset
