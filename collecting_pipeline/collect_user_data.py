@@ -33,45 +33,187 @@ class PiplineCollector:
             Creator(None, user_external_id, True, self._working_network.id)
         )
 
-    def run_pipeline(
-        self, offset=0, groups_offset=0, post_offset=0, comments_offset=0, reacts_offset=0
-    ):
-        """Запуск пайплайна сбора данных"""
-        self._parse_users(offset)
-        self._parse_subscriptions(groups_offset)
-        self._parse_posts(post_offset)
-        self._parse_comments(comments_offset)
-        self._parse_reacts(reacts_offset)
+    def _process_batch_with_pbar(self, total, desc, unit, processor_func, offset_start=0):
+        """Универсальный метод для обработки данных с прогресс-баром"""
+        offset = offset_start
 
-    def _parse_users(self, first_offset=0):
-        total_users = self._creators_repo.count_people_by_network(self._working_network.id)
-        offset = first_offset
-        with tqdm.tqdm(
-            total=total_users, initial=0, desc="Processing groups", unit="users"
-        ) as pbar:
-            while offset < total_users:
-                peoples, offset = self._creators_repo.get_users_to_process(
-                    offset=offset, isperson=True
-                )
-                if not peoples:
-                    print(f"Warning: Empty batch received at offset {offset}")
-                    continue
+        with tqdm.tqdm(total=total, initial=offset, desc=desc, unit=unit) as pbar:
+            while offset < total:
                 try:
-                    self._process_user_batch(peoples, pbar, offset)
-                except Exception:
+                    offset = processor_func(offset, pbar)
+                except Exception as e:
+                    if "flood control" in str(e) or "Rate limit exceeded" in str(e):
+                        print("⚠️ Лимит API, пауза 60 сек...")
+                        time.sleep(60)
+                        continue
+                    print(f"❌ Критическая ошибка: {e}")
                     return offset
         return offset
 
-    def _process_user_batch(self, peoples: list[Creator], pbar) -> int:
-        for creator in peoples:
+    def _process_entity_batch(self, get_entities_func, process_entity_func, offset, pbar):
+        """Обрабатывает батч сущностей (пользователей, постов и т.д.)"""
+        entities, new_offset = get_entities_func(offset)
+
+        if not entities:
+            print(f"Warning: Empty batch received at offset {offset}")
+            return offset
+
+        for entity in entities:
             try:
-                friends_out = self._network_api_service.get_friends(creator)
-                self._add_creators_friends(creator, friends_out)
+                process_entity_func(entity)
             except Exception as e:
-                if "Rate limit exceeded" in str(e) or "flood control" in str(e):
+                self._handle_processing_error(e, entity)
+                if self._is_rate_limit_error(e):
                     raise e
             finally:
                 pbar.update(1)
+
+        return new_offset
+
+    def _is_rate_limit_error(self, error):
+        """Проверяет, является ли ошибка ограничением API"""
+        error_msg = str(error)
+        return "flood control" in error_msg or "Rate limit exceeded" in error_msg
+
+    def _handle_processing_error(self, error, entity):
+        """Обрабатывает ошибки обработки"""
+        error_msg = str(error)
+        if "flood control" in error_msg:
+            print(f"⚠️ Ограничение API при обработке {getattr(entity, 'external_id', entity)}")
+        else:
+            print(f"❌ Ошибка при обработке {getattr(entity, 'external_id', entity)}: {error}")
+
+    # ========== МЕТОДЫ ДЛЯ РАЗНЫХ ТИПОВ ДАННЫХ ==========
+
+    def _parse_users(self, first_offset=0):
+        """Сбор пользователей и их друзей"""
+        total = self._creators_repo.count_people_by_network(self._working_network.id)
+
+        def process_user_batch(offset, pbar):
+            peoples, new_offset = self._creators_repo.get_users_to_process(
+                offset=offset, isperson=True
+            )
+
+            for creator in peoples:
+                try:
+                    friends = self._network_api_service.get_friends(creator)
+                    self._add_creators_friends(creator, friends)
+                except Exception as e:
+                    if self._is_rate_limit_error(e):
+                        raise e
+                finally:
+                    pbar.update(1)
+
+            return new_offset
+
+        return self._process_batch_with_pbar(
+            total, "Сбор пользователей", "users", process_user_batch, first_offset
+        )
+
+    def _parse_subscriptions(self, first_offset=0):
+        """Сбор подписок пользователей на группы"""
+        total = self._creators_repo.count_people_by_network(self._working_network.id)
+
+        def process_subscription_batch(offset, pbar):
+            peoples, new_offset = self._creators_repo.get_users_to_process(
+                offset=offset, isperson=True
+            )
+
+            for creator in peoples:
+                try:
+                    groups = self._network_api_service.get_groups(creator)
+                    if groups:
+                        self._creators_repo.create_many_creators(groups)
+                        self._subs_repo.subscribe_for_many(creator, groups)
+                except Exception as e:
+                    if self._is_rate_limit_error(e):
+                        raise e
+                finally:
+                    pbar.update(1)
+
+            return new_offset
+
+        return self._process_batch_with_pbar(
+            total, "Сбор подписок", "users", process_subscription_batch, first_offset
+        )
+
+    def _parse_posts(self, offset_start=0):
+        """Сбор постов пользователей"""
+        total = self._creators_repo.count_people_by_network(self._working_network.id)
+        two_weeks_ago = int(time.time()) - (14 * 24 * 60 * 60)
+
+        def process_posts_batch(offset, pbar):
+            peoples, new_offset = self._creators_repo.get_users_to_process(
+                offset=offset, isperson=False
+            )
+
+            for creator in peoples:
+                try:
+                    posts = self._network_api_service.get_post(creator, two_weeks_ago)
+                    self._notes_repo.create_many_posts(posts)
+                except Exception as e:
+                    if self._is_rate_limit_error(e):
+                        raise e
+                finally:
+                    pbar.update(1)
+
+            return new_offset
+
+        return self._process_batch_with_pbar(
+            total, "Сбор постов", "users", process_posts_batch, offset_start
+        )
+
+    def _parse_comments(self, offset_start=0):
+        """Сбор комментариев к постам"""
+        total = self._notes_repo.count_posts_by_network(self._working_network.id)
+
+        def process_comments_batch(offset, pbar):
+            posts, new_offset = self._notes_repo.get_posts_to_process(
+                offset=offset, limit=self._batch_size, network_id=self._working_network.id
+            )
+
+            for post in posts:
+                try:
+                    comments = self._network_api_service.get_comments(post.external_id)
+                    self._save_comments_with_authors(post, comments)
+                    time.sleep(self._api_delay)
+                except Exception as e:
+                    print(f"Ошибка для поста {post.external_id}: {e}")
+                finally:
+                    pbar.update(1)
+
+            return new_offset
+
+        return self._process_batch_with_pbar(
+            total, "Сбор комментариев", "постов", process_comments_batch, offset_start
+        )
+
+    def _parse_reacts(self, offset_start=0):
+        """Сбор реакций (лайков) к постам"""
+        total = self._notes_repo.count_posts_by_network(self._working_network.id)
+
+        def process_reacts_batch(offset, pbar):
+            posts, new_offset = self._notes_repo.get_posts_to_process(
+                offset=offset, limit=self._batch_size, network_id=self._working_network.id
+            )
+
+            for post in posts:
+                try:
+                    liked_users = self._network_api_service.get_likes(post.external_id)
+                    self._save_likes_with_users(post, liked_users)
+                    time.sleep(self._api_delay)
+                except Exception as e:
+                    print(f"Ошибка для поста {post.external_id}: {e}")
+                finally:
+                    pbar.update(1)
+
+            return new_offset
+
+        return self._process_batch_with_pbar(
+            total, "Сбор лайков", "постов", process_reacts_batch, offset_start
+        )
+
+    # ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
     def _add_creators_friends(self, creator, friends):
         """Добавление друзей создателя в базу и создание подписок"""
@@ -83,189 +225,43 @@ class PiplineCollector:
                 )
             return friends_saved
         except Exception as e:
-            print(f"❌ Ошибка: {e}")
-            return None, []
+            print(f"❌ Ошибка при сохранении друзей: {e}")
+            return None
 
-    def _parse_subscriptions(self, first_offset: int = 0):
-        total_users = self._creators_repo.count_people_by_network(self._working_network.id)
-        offset = first_offset
-        with tqdm.tqdm(
-            total=total_users, initial=0, desc="Processing groups", unit="users"
-        ) as main_pbar:
-            while offset < total_users:
-                try:
-                    peoples, offset = self._creators_repo.get_users_to_process(
-                        offset=offset, isperson=True
-                    )
-                    if not peoples:
-                        print(f"Warning: Empty batch received at offset {offset}")
-                        break
-                    self._process_group_batch(peoples, main_pbar)
-                except Exception:
-                    return offset
-        return offset
+    def _save_comments_with_authors(self, post, comments):
+        """Сохраняет комментарии и их авторов"""
+        if not comments:
+            return
 
-    def _process_group_batch(self, peoples: list[Creator], pbar) -> int:
-        for creator in peoples:
-            try:
-                groups = self._network_api_service.get_groups(creator)
-                if groups:
-                    self._creators_repo.create_many_creators(groups)
-                    self._subs_repo.subscribe_for_many(creator, groups)
-            except Exception as e:
-                print(f"\nКритическая ошибка при обработке пользователя {creator.external_id}: {e}")
-                if "flood control" in str(e):
-                    print(f"\nОграничение API для пользователя {creator.external_id}: {e}")
-                    raise e
-            finally:
-                pbar.update(1)
+        saved_comments = self._notes_repo.create_many_posts(comments)
+        if not saved_comments:
+            return
 
-    def _parse_posts(self, offset_start: int = 0):
-        total_users = self._creators_repo.count_people_by_network(self._working_network.id)
-        two_weeks_ago = int(time.time()) - (14 * 24 * 60 * 60)
-        offset = offset_start
-        with tqdm.tqdm(
-            total=total_users, initial=0, desc="Processing groups", unit="users"
-        ) as pbar:
-            while offset < total_users:
-                peoples, offset = self._creators_repo.get_users_to_process(
-                    offset=offset, isperson=False
-                )
-                for creator in peoples:
-                    try:
-                        posts = self._network_api_service.get_post(creator, two_weeks_ago)
-                        self._notes_repo.create_many_posts(posts)
-                    except Exception as e:
-                        print(
-                            f"\nКритическая ошибка при обработке пользователя {creator.external_id}: {e}"
-                        )
-                        if "flood control" in str(e):
-                            print(f"Error with processing batch: {e}")
-                            print(e)
-                            return offset
-                    finally:
-                        pbar.update(1)
+        self.stats["comments_processed"] = self.stats.get("comments_processed", 0) + len(
+            saved_comments
+        )
 
-    def _parse_comments(self, offset_start: int = 0):
-        """Сбор комментариев к постам"""
-        total_posts = self._notes_repo.count_posts_by_network(self._working_network.id)
-        offset = offset_start
+        # Создаем авторов комментариев
+        comment_authors = [
+            Creator(None, comment.creator, True, self._working_network.id)
+            for comment in saved_comments
+            if comment.creator
+        ]
 
-        with tqdm(
-            total=total_posts, initial=offset, desc="Сбор комментариев", unit="постов"
-        ) as pbar:
-            while offset < total_posts:
-                try:
-                    # Получаем пакет постов
-                    posts, offset = self._notes_repo.get_posts_to_process(
-                        offset=offset, limit=100, network_id=self._working_network.id
-                    )
+        if comment_authors:
+            self._creators_repo.create_many_creators(comment_authors)
 
-                    if not posts:
-                        print(f"Warning: Empty posts batch at offset {offset}")
-                        break
+    def _save_likes_with_users(self, post, liked_users):
+        """Сохраняет лайки и пользователей"""
+        if not liked_users:
+            return
 
-                    self._process_comments_batch(posts, pbar)
+        saved_users = self._creators_repo.create_many_creators(liked_users)
+        if not saved_users:
+            return
 
-                except Exception as e:
-                    print(f"\nОшибка при сборе комментариев: {e}")
-                    if "flood control" in str(e):
-                        print("⚠️ Лимит API, пауза 60 сек...")
-                        time.sleep(60)
-                        continue
-                    else:
-                        return offset
+        self.stats["likes_processed"] = self.stats.get("likes_processed", 0) + len(saved_users)
 
-        return offset
-
-    def _process_comments_batch(self, posts: list[Note], pbar):
-        """Обработка пакета постов для сбора комментариев"""
-        for post in posts:
-            try:
-                # Получаем комментарии к посту
-                comments = self._network_api_service.get_comments(post.external_id)
-
-                if comments:
-                    # Сохраняем комментарии
-                    saved_comments = self._notes_repo.create_many_posts(comments)
-
-                    if saved_comments:
-                        self.stats["comments_processed"] += len(saved_comments)
-
-                        # Создаем подписки между авторами комментариев и автором поста
-                        comment_creators = [
-                            Creator(None, comment.creator, True, self._working_network.id)
-                            for comment in saved_comments
-                            if comment.creator
-                        ]
-
-                        if comment_creators:
-                            self._creators_repo.create_many_creators(comment_creators)
-
-                time.sleep(0.3)  # Небольшая задержка между запросами
-
-            except Exception as e:
-                print(f"Ошибка при сборе комментариев для поста {post.external_id}: {e}")
-            finally:
-                pbar.update(1)
-
-    def _parse_reacts(self, offset_start: int = 0):
-        """
-        Сбор реакций (лайков) к постам
-        """
-        total_posts = self._notes_repo.count_posts_by_network(self._working_network.id)
-        offset = offset_start
-
-        with tqdm(total=total_posts, initial=offset, desc="Сбор лайков", unit="постов") as pbar:
-            while offset < total_posts:
-                try:
-                    # Получаем пакет постов
-                    posts, offset = self._notes_repo.get_posts_to_process(
-                        offset=offset, limit=100, network_id=self._working_network.id
-                    )
-
-                    if not posts:
-                        print(f"Warning: Empty posts batch at offset {offset}")
-                        break
-
-                    self._process_reacts_batch(posts, pbar)
-
-                except Exception as e:
-                    print(f"\nОшибка при сборе лайков: {e}")
-                    if "flood control" in str(e):
-                        print("⚠️ Лимит API, пауза 60 сек...")
-                        time.sleep(60)
-                        continue
-                    else:
-                        return offset
-
-        return offset
-
-    def _process_reacts_batch(self, posts: list[Note], pbar):
-        """Обработка пакета постов для сбора лайков"""
-        for post in posts:
-            try:
-                # Получаем пользователей, которые лайкнули пост
-                liked_users = self._network_api_service.get_likes(post.external_id)
-
-                if liked_users:
-                    # Сохраняем пользователей, если их нет в БД
-                    saved_users = self._creators_repo.create_many_creators(liked_users)
-
-                    if saved_users:
-                        self.stats["likes_processed"] += len(saved_users)
-
-                        # Создаем записи о лайках
-                        likes = []
-                        for user in saved_users:
-                            likes.append(Like(post.id, user.id))
-
-                        if likes:
-                            self._likes_repo.create_many_likes(likes)
-
-                time.sleep(0.3)  # Небольшая задержка между запросами
-
-            except Exception as e:
-                print(f"Ошибка при сборе лайков для поста {post.external_id}: {e}")
-            finally:
-                pbar.update(1)
+        likes = [Like(post.id, user.id) for user in saved_users]
+        if likes:
+            self._likes_repo.create_many_likes(likes)
