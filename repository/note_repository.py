@@ -101,6 +101,44 @@ class NoteRepository(BaseRepository):
         results = self.execute_query(query, (parent_id, limit, skip))
         return [Note.from_dict(r) for r in results]
 
+    def get_replies_count_by_creator(self, creator_id: int) -> int:
+        """Получить количество комментариев актора"""
+        query = """
+            SELECT count(*) FROM note
+            WHERE parent IS NOT NULL and creator = %s
+        """
+        result = self.execute_query(query, (creator_id,))
+        return result[0]["count"] if result else 0
+
+    def get_replies_count_by_creator_to_actor(self, creator_id: int, actor_id: int) -> int:
+        """Получить ответы на пост"""
+        query = query = """
+        WITH RECURSIVE comments_hierarchy AS (
+            -- Базовый уровень: все посты actor_id
+            SELECT
+                id,
+                creator,
+                parent
+            FROM note
+            WHERE creator = %s
+
+            UNION ALL
+
+            -- Рекурсивно получаем все комментарии и реплаи на эти посты
+            SELECT
+                n.id,
+                n.creator,
+                n.parent
+            FROM note n
+            INNER JOIN comments_hierarchy ch ON n.parent = ch.id
+        )
+        SELECT COUNT(*)
+        FROM comments_hierarchy
+        WHERE creator = %s
+        """
+        result = self.execute_query(query, (actor_id, creator_id))
+        return result[0]["count"] if result else 0
+
     def get_user_comments_count(self, user_id: int) -> int:
         """Получить ответы на пост"""
         query = """

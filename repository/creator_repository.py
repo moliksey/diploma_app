@@ -125,6 +125,86 @@ class CreatorRepository(BaseRepository):
         results = self.execute_query(query, (limit, skip))
         return [Creator.from_dict(r) for r in results]
 
+    def get_unique_interactors_count(self, creator_id: int) -> int:
+        """
+        Возвращает количество уникальных пользователей, взаимодействовавших с creator_id:
+        - подписчики (subscriber)
+        - те, кто лайкнул его посты
+        - те, кто оставил комментарии под его постами
+        """
+        query = """
+            WITH user_posts AS (
+                -- Получаем все посты пользователя
+                SELECT id FROM note
+                WHERE creator = %s
+            ),
+            unique_interactors AS (
+                -- Подписчики (кто подписан на этого пользователя)
+                SELECT subscriber AS actor_id
+                FROM sub
+                WHERE contentmaker = %s
+
+                UNION
+
+                -- Лайкнувшие его посты
+                SELECT DISTINCT l.person AS actor_id
+                FROM "like" l
+                INNER JOIN user_posts up ON l.post = up.id
+
+                UNION
+
+                -- Комментаторы (авторы заметок, у которых parent = пост пользователя)
+                SELECT DISTINCT n.creator AS actor_id
+                FROM note n
+                INNER JOIN user_posts up ON n.parent = up.id
+                WHERE n.creator IS NOT NULL
+            )
+            SELECT COUNT(DISTINCT actor_id) FROM unique_interactors
+            WHERE actor_id IS NOT NULL
+        """
+        result = self.execute_query(query, (creator_id, creator_id))
+        return result[0]["count"] if result else 0
+
+    def get_unique_interactors(self, creator_id: int) -> int:
+        """
+        Возвращает количество уникальных пользователей, взаимодействовавших с creator_id:
+        - подписчики (subscriber)
+        - те, кто лайкнул его посты
+        - те, кто оставил комментарии под его постами
+        """
+        query = """
+            WITH user_posts AS (
+                -- Получаем все посты пользователя
+                SELECT id FROM note
+                WHERE creator = %s
+            ),
+            unique_interactors AS (
+                -- Подписчики (кто подписан на этого пользователя)
+                SELECT subscriber AS actor_id
+                FROM sub
+                WHERE contentmaker = %s
+
+                UNION
+
+                -- Лайкнувшие его посты
+                SELECT DISTINCT l.person AS actor_id
+                FROM "like" l
+                INNER JOIN user_posts up ON l.post = up.id
+
+                UNION
+
+                -- Комментаторы (авторы заметок, у которых parent = пост пользователя)
+                SELECT DISTINCT n.creator AS actor_id
+                FROM note n
+                INNER JOIN user_posts up ON n.parent = up.id
+                WHERE n.creator IS NOT NULL
+            )
+            SELECT DISTINCT actor_id FROM unique_interactors
+            WHERE actor_id IS NOT NULL
+        """
+        result = self.execute_query(query, (creator_id, creator_id))
+        return result["actor_id"]
+
     def update(self, creator_id: int, **kwargs) -> Creator | None:
         """Обновить данные актора"""
         allowed_fields = ["external_id", "is_person", "network_type"]

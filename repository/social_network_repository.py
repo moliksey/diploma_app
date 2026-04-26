@@ -33,6 +33,30 @@ class SocialNetworkRepository:
             "creator": self.creators.get_by_id(post.creator) if post.creator else None,
         }
 
+    def weight_interactions(
+        self,
+        actor: int,
+        sub_actor: int,
+        weight_like: float,
+        weight_comment: float,
+        weight_sub: float,
+    ) -> int:
+        """Взвешивает отношение актора к субактору"""
+        result = 0
+        if self.subs.is_subscribed(sub_actor, actor):
+            result += weight_sub
+        actors_likes = self.likes.get_user_likes_count(actor)
+        if actors_likes != 0:
+            result += weight_like * (
+                self.likes.get_user_likes_count_to_user(actor, sub_actor) / actors_likes
+            )
+        actors_comments = self.notes.get_replies_count_by_creator(actor)
+        if actors_comments != 0:
+            result += weight_comment * (
+                self.notes.get_replies_count_by_creator_to_actor(actor, sub_actor) / actors_comments
+            )
+        return result
+
     def get_creator_profile(self, creator_id: int) -> dict[str, Any]:
         """Получить полный профиль создателя"""
         creator = self.creators.get_by_id(creator_id)

@@ -68,6 +68,16 @@ class LikeRepository(BaseRepository):
         results = self.execute_query(query, (person_id, limit, skip))
         return [Note.from_dict(r) for r in results]
 
+    def get_user_likes_count_to_user(self, liker_id: int, contentmaker_id: int) -> int:
+        query = query = """
+        SELECT COUNT(*)
+        FROM "like" l
+        INNER JOIN note n ON l.post = n.id
+        WHERE l.person = %s AND n.creator = %s
+        """
+        result = self.execute_query(query, (liker_id, contentmaker_id))
+        return result[0]["count"] if result else 0
+
     def get_likes_count(self, post_id: int) -> int:
         """Количество лайков у поста"""
         query = 'SELECT COUNT(*) FROM "like" WHERE post = %s'

@@ -24,7 +24,11 @@ class SocialGraph:
         self._notes_repo = NoteRepository(db_params)
         self._subs_repo = SubRepository(db_params)
         self._likes_repo = LikeRepository(db_params)
-
+        self._social_network_repo = SocialNetworkRepository(db_params)
+        # FIXME подобрать веса
+        self._weight_like = 1.0
+        self._weight_comment = 1.5
+        self._weight_sub = 2.0
         # Получаем сеть
         self._working_network = self._networks_repo.get_or_create(network.name)
 
@@ -36,14 +40,12 @@ class SocialGraph:
         self._working_network = network
 
         self._add_nodes()
-        self._add_subscription_edges()
-        self._add_like_edges()
-        self._add_comment_edges()
+        self._add_weighted_interaction_edges()
 
         return self.graph
 
     def _add_nodes(self):
-        """Добавляет узлы (пользователей) в граф"""
+        """Добавляет узлы (акторов) в граф"""
         total_users = self._creators_repo.count_by_network(self._working_network.id)
         offset = 0
 
@@ -65,83 +67,63 @@ class SocialGraph:
                 self._save_checkpoint_if_needed(offset, self._batch_size_nodes)
                 pbar.update(self._batch_size_nodes)
 
+    def _add_weighted_interaction_edges(self):
+        """
+        Добавляет взвешенные ребра между пользователями на основе их взаимодействий.
+        Для каждого пользователя находим всех, с кем он взаимодействовал,
+        и добавляем ребро с рассчитанным весом.
+        """
+        total_users = self._creators_repo.count_by_network(self._working_network.id)
+        offset = 0
+
+        with tqdm.tqdm(
+            total=total_users,
+            desc="Построение взвешенных связей",
+            unit=" пользователь",
+            dynamic_ncols=True,
+        ) as pbar:
+            while offset < total_users:
+                # Получаем батч пользователей
+                users, offset = self._creators_repo.get_users_to_process(
+                    offset=offset,
+                    limit=self._batch_size_nodes,
+                    isperson=False,
+                    network=self._working_network,
+                )
+
+                self._process_edges_baatch(users)
+                self._save_checkpoint_if_needed(offset, self._batch_size_nodes)
+                pbar.update(self._batch_size_nodes)
+
+    def _process_edges_baatch(self, users):
+        """Обрабатывает батч связей"""
+        for user in users:
+            try:
+                interactors = self._creators_repo.get_unique_interactors(
+                    creator_id=user.id,
+                )
+
+                for interactor_id in interactors:
+                    weight = self._social_network_repo.weight_interactions(
+                        interactor_id,
+                        user.id,
+                        self._weight_like,
+                        self._weight_comment,
+                        self._weight_sub,
+                    )
+                    self.graph.add_edge(interactor_id, user.id, weight=weight)
+
+            except Exception as e:
+                print(f"Ошибка при обработке пользователя {user.id}: {e}")
+
     def _process_users_batch(self, users):
         """Обрабатывает батч пользователей"""
         for user in users:
             try:
-                size = self._calculate_user_size(user.id)
+                size = self._creators_repo.get_unique_interactors_count(user.id)
                 self.graph.add_node(user.id, size=size)
             except Exception as e:
                 print(f"Ошибка при добавлении пользователя {user.id}: {e}")
-
-    def _calculate_user_size(self, user_id: int) -> int:
-        """Рассчитывает размер узла на основе активности пользователя"""
-        subscribers = self._subs_repo.get_subscribers_count(user_id)
-        likes = self._likes_repo.get_user_likes_count(user_id)
-        comments = self._notes_repo.get_user_comments_count(user_id)
-        return subscribers + likes + comments
-
-    def _add_subscription_edges(self):
-        """Добавляет ребра подписок"""
-        self._add_edges(
-            total_count_fn=lambda: self._subs_repo.get_subs_count_over_network(
-                self._working_network
-            ),
-            get_edges_fn=lambda offset, limit: self._subs_repo.get_subs_to_process(
-                limit=limit, offset=offset
-            ),
-            transform_fn=lambda edges: [(sub.subscriber, sub.contentmaker) for sub in edges],
-            description="Все подписочные связи",
-        )
-
-    def _add_like_edges(self):
-        """Добавляет ребра лайков"""
-        self._add_edges(
-            total_count_fn=lambda: self._likes_repo.get_likes_count_over_network(
-                self._working_network
-            ),
-            get_edges_fn=lambda offset, limit: self._likes_repo.get_like_edges_to_process(
-                limit=limit, offset=offset
-            ),
-            transform_fn=lambda edges: edges,  # уже в правильном формате
-            description="Все связи по лайкам",
-        )
-
-    def _add_comment_edges(self):
-        """Добавляет ребра комментариев"""
-        self._add_edges(
-            total_count_fn=lambda: self._notes_repo.get_comments_count_over_network(
-                self._working_network
-            ),
-            get_edges_fn=lambda offset, limit: self._notes_repo.get_comment_edges_to_process(
-                limit=limit, offset=offset
-            ),
-            transform_fn=lambda edges: edges,  # уже в правильном формате
-            description="Все связи по комментариям",
-        )
-
-    def _add_edges(self, total_count_fn, get_edges_fn, transform_fn, description):
-        """Универсальный метод для добавления ребер любого типа"""
-        total_edges = total_count_fn()
-        offset = 0
-
-        with tqdm.tqdm(
-            total=total_edges,
-            desc=description,
-            unit=" связь",
-            dynamic_ncols=True,
-        ) as pbar:
-            while offset < total_edges:
-                try:
-                    edges, offset = get_edges_fn(offset, self._batch_size_edges)
-                    transformed_edges = transform_fn(edges)
-                    self.graph.add_edges_from(transformed_edges)
-
-                    self._save_checkpoint_if_needed(offset, self._batch_size_edges)
-                    pbar.update(self._batch_size_edges)
-
-                except Exception as e:
-                    print(f"Ошибка при добавлении {description.lower()}: {e}")
 
     def _save_checkpoint_if_needed(self, offset, batch_size):
         """Сохраняет чекпоинт при достижении интервала"""
