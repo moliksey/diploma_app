@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from typing import Any
 
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_batch
 
 
 class SocialRepository:
@@ -42,3 +42,23 @@ class SocialRepository:
                 cur.execute(query, params)
                 conn.commit()
                 return cur.fetchone()[0] if cur.description else cur.lastrowid
+
+    def execute_batch_update(self, query: str, params_list: list[tuple]) -> int:
+        """
+        Выполнить пакетную вставку/обновление нескольких записей
+
+        Args:
+            query: SQL запрос с плейсхолдерами (%s)
+            params_list: Список кортежей параметров для каждого выполнения
+
+        Returns:
+            Количество затронутых строк
+        """
+        if not params_list:
+            return 0
+
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                execute_batch(cur, query, params_list)
+                conn.commit()
+                return cur.rowcount

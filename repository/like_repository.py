@@ -1,8 +1,8 @@
 from dto import Creator, Like, Network, Note
-from repository import BaseRepository
+from repository import SocialRepository
 
 
-class LikeRepository(BaseRepository):
+class LikeRepository(SocialRepository):
     """Репозиторий для работы с лайками"""
 
     def like(self, post_id: int, person_id: int) -> bool:

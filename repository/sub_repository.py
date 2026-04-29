@@ -1,8 +1,8 @@
 from dto import Creator, Network, Sub
-from repository import BaseRepository
+from repository import SocialRepository
 
 
-class SubRepository(BaseRepository):
+class SubRepository(SocialRepository):
     """Репозиторий для работы с подписками"""
 
     def subscribe(self, contentmaker_id: int, subscriber_id: int) -> bool:

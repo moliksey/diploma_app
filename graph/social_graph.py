@@ -11,7 +11,7 @@ from repository import *
 class SocialGraph:
     """Класс социального графа"""
 
-    def __init__(self, network: NetworkType, creds: dict):
+    def __init__(self, network: NetworkType):
         """Инициализация коллектора с инъекцией репозиториев"""
         self._graph = nx.DiGraph()
 

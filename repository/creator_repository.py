@@ -1,10 +1,10 @@
 from typing import Any
 
 from dto import Creator, Network
-from repository.base_repository import BaseRepository
+from repository.base_repository import SocialRepository
 
 
-class CreatorRepository(BaseRepository):
+class CreatorRepository(SocialRepository):
     """Репозиторий для работы с создателями контента"""
 
     def create(self, creator: Creator) -> Creator:

@@ -1,9 +1,9 @@
-from base_repository import BaseRepository
+from base_repository import SocialRepository
 
 from dto.network_dto import Network
 
 
-class NetworkRepository(BaseRepository):
+class NetworkRepository(SocialRepository):
     """Репозиторий для работы с социальными сетями"""
 
     def create(self, network: Network) -> Network:
