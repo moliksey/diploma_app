@@ -1,6 +1,4 @@
 from typing import Dict, List, Optional
-from datetime import datetime
-import pickle
 import os
 
 from bertopic import BERTopic
@@ -13,17 +11,16 @@ from repository import *
 
 
 class TopicModelingService:
-    def __init__(self, note_repo: NoteRepository, topic_repo: TopicRepository):
+    def __init__(self, note_repo: NoteRepository):
         self._note_repo = note_repo
-        self._topic_repo = topic_repo
         self.MIN_TOPIC_PROBABILITY = 0.6
         self.model = None
         self.is_fitted = False
         
         # Настройки для инкрементального обучения
         self.new_texts_buffer = []  # Буфер для новых текстов
-        self.buffer_size_for_update = 1000  # Обновляем модель после 100 новых текстов
-        self.buffer_offset = 0  # Максимум документов для хранения в памяти
+        self.buffer_size_for_update = 1000  
+        self.buffer_offset = 0 
         
         # Настройка модели BERTopic
         self.embedding_model = SentenceTransformer(
@@ -31,11 +28,11 @@ class TopicModelingService:
         )
 
         self.umap_model = UMAP(
-            n_neighbors=15, n_components=5, min_dist=0.0, metric="cosine", random_state=42
+            n_neighbors=35, n_components=8, min_dist=0.1, metric="cosine", random_state=42
         )
 
         self.hdbscan_model = HDBSCAN(
-            min_cluster_size=10,
+            min_cluster_size=25,
             metric="euclidean",
             cluster_selection_method="eom",
             prediction_data=True,
@@ -78,7 +75,7 @@ class TopicModelingService:
         """
         Инициализирует модель:
         1. Пытается загрузить сохранённую модель
-        2. Если нет или force_retrain=True - обучает на всех исторических данных
+        2. Если нет или force_retrain=True - обучает на всех исторических данных батчами
         """
         if not force_retrain and self._load_model():
             return
@@ -151,7 +148,6 @@ class TopicModelingService:
         if not thread_text or len(thread_text) < 20:
             return None
         
-
         # Получаем тему от модели
         try:
             topic_ids, probs = self.model.transform([thread_text])
@@ -228,30 +224,26 @@ class TopicModelingService:
         
         # Анализируем каждый тред
         analyzed_count = 0
-        topics_cache = {}  # Кеш для тем, чтобы не сохранять одну тему много раз
+        topics_cache = {}  # Кеш для тем, чтобы не сохранять метаданные темы много раз
         
         for thread_id, thread_posts in threads.items():
             result = self.analyze_thread(thread_posts)
 
             if result and result["topic_id"] != -1:
-                # Сохраняем тему только если её ещё нет в кеше
+                # Сохраняем метаданные темы только если её ещё нет в кеше
                 if result["topic_id"] not in topics_cache:
                     topic_dto = Topic(
                         topic_id=result["topic_id"],
                         topic_name=result["topic_name"],
-                        topic_description=" ".join([kw["word"] for kw in result["keywords"][:5]]),
                         keywords=result["keywords"],
-                        representative_docs=[thread_posts[0]["msg"]],
-                        frequency=1,
                     )
                     self._note_repo.save_topic(topic_dto)
                     topics_cache[result["topic_id"]] = True
 
                 # Сохраняем связь для каждого поста в треде
                 for post in thread_posts:
-                    note_topic_dto = Note(
+                    note_topic_dto = NoteTopic(
                         note_id=post["id"],
-                        thread_id=thread_id,
                         topic_id=result["topic_id"],
                         topic_probability=result["topic_probability"],
                         is_thread_based=True,

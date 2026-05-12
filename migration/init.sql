@@ -65,18 +65,25 @@ CREATE TABLE IF NOT EXISTS like (
         ON DELETE CASCADE
 );
 
--- Таблица для хранения тем
-CREATE TABLE IF NOT EXISTS thread_topic (
+-- Таблица для хранения метаданных тем
+CREATE TABLE IF NOT EXISTS topic (
     id SERIAL PRIMARY KEY,
-    thread_id BIGINT NOT NULL UNIQUE,     -- ID корневого поста (уникальный, т.к. тред один раз анализируем)
-    topic_id INTEGER NOT NULL,             -- ID от BERTopic (-1 для выбросов)
+    topic_id INTEGER NOT NULL UNIQUE,      -- ID от BERTopic (-1 для выбросов)
     topic_name TEXT,                       -- Название темы ("python_программирование")
-    topic_probability FLOAT,               -- Уверенность (0-1)
     keywords JSONB,                        -- Ключевые слова с весами
+    created_at TIMESTAMP DEFAULT NOW(),
+);
+
+-- Таблица связи пост-тема (для каждого поста)
+CREATE TABLE IF NOT EXISTS note_topic (
+    id SERIAL PRIMARY KEY,
+    note_id BIGINT NOT NULL,               -- ID поста
+    topic_id INTEGER NOT NULL,             -- ID темы
+    topic_probability FLOAT,               -- Уверенность для этого поста
+    is_thread_based BOOLEAN DEFAULT TRUE,  -- Анализ на уровне треда
     analyzed_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT fk_thread_topic_note 
-        FOREIGN KEY (thread_id) 
+    CONSTRAINT fk_note_topic_note 
+        FOREIGN KEY (note_id) 
         REFERENCES note(id)
         ON DELETE CASCADE
 );
@@ -89,4 +96,6 @@ CREATE INDEX IF NOT EXISTS idx_sub_contentmaker ON sub(contentmaker);
 CREATE INDEX IF NOT EXISTS idx_sub_subscriber ON sub(subscriber);
 CREATE INDEX IF NOT EXISTS idx_like_post ON like(post);
 CREATE INDEX IF NOT EXISTS idx_like_person ON like(person);
-CREATE INDEX idx_thread_topic_topic_id ON thread_topic(topic_id);
+CREATE INDEX IF NOT EXISTS idx_topic_topic_id ON topic(topic_id);
+CREATE INDEX IF NOT EXISTS idx_note_topic_note_id ON note_topic(note_id);
+CREATE INDEX IF NOT EXISTS idx_note_topic_topic_id ON note_topic(topic_id);
